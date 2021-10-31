@@ -94,11 +94,12 @@ struct proc {
   int pid;                     // Process ID
   int timeOfCreation;          
 
-  uint64 priority;
+  uint64 staticPriority;
   uint64 runTime;
   uint64 startTime;
-  uint64 waitTime;
   uint64 numScheduled;
+  uint64 sleepTime;
+  uint64 totalRunTime;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
