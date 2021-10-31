@@ -120,6 +120,12 @@ found:
   p->timeOfCreation = ticks;
   p->pid = allocpid();
   p->state = USED;
+  p->numScheduled = 0;
+  p->staticPriority = 60;
+  p->runTime = 0;
+  p->startTime = 0;
+  p->sleepTime = 0;
+  p->totalRunTime = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -506,6 +512,53 @@ scheduler(void)
     #else
     
     #ifdef PBS
+      struct proc* process = 0;
+      int dp = 101;
+      for (p = proc; p < &proc[NPROC]; p++)
+      {
+        acquire(&p->lock);
+
+        int nice = 5;
+
+        if (p->numScheduled)
+          nice = (p->sleepTime / (p->sleepTime + p->runTime)) * 10;
+
+        int val = p->staticPriority - nice + 5;
+        val = val < 100? val : 100;
+        int processDp = 0 > val? 0 : val;
+
+        int flag1 = (dp == processDp && p->numScheduled < process->numScheduled);
+        int flag2 = (dp == processDp && p->numScheduled == process->numScheduled && p->timeOfCreation < process->timeOfCreation);
+
+        if (p->state == RUNNABLE)
+        {
+          if(!process || dp > processDp || flag1 ||flag2)
+          {
+            if (process)
+              release(&process->lock);
+
+            process = p;
+            dp = processDp;
+            continue;
+          }
+        }
+        release(&p->lock);
+      }
+
+      if (process)
+      {
+        process->numScheduled++;
+        process->startTime = ticks;
+        process->state = RUNNING;
+        process->runTime = 0;
+        process->sleepTime = 0;
+        c->proc = process;
+        swtch(&c->context, &process->context);
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+        release(&process->lock);
+      }
     #else
     #ifdef MLFC
     #endif
@@ -684,15 +737,20 @@ procdump(void)
 {
   static char *states[] = {
   [UNUSED]    "unused",
-  [SLEEPING]  "sleep ",
+  [SLEEPING]  "sleeping",
   [RUNNABLE]  "runble",
-  [RUNNING]   "run   ",
+  [RUNNING]   "running",
   [ZOMBIE]    "zombie"
   };
   struct proc *p;
   char *state;
 
   printf("\n");
+
+  #ifdef PBS
+    printf("PID   Priority\tState\t  rtime\t wtime\tnrun\n");
+  #endif 
+
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -700,7 +758,62 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
+    
+    #ifdef PBS
+      printf("%d\t%d\t%s    %d\t  %d\t%d", p->pid, p->staticPriority, state, p->totalRunTime, ticks - (p->timeOfCreation + p->totalRunTime), p->numScheduled);
+    #else
+      printf("%d %s %s", p->pid, state, p->name);
+    #endif
     printf("\n");
   }
+}
+
+void
+updateTime()
+{
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
+
+    if (p->state == RUNNING)
+    {
+      p->runTime++;
+      p->totalRunTime++;
+    }
+
+    if (p->state == SLEEPING)
+      p->sleepTime++;
+
+    release(&p->lock);
+
+  }
+}
+
+int set_priority(int priority, int pid)
+{
+    int val = -1;
+    struct proc *p;
+
+    for(p = proc; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      
+      if(p->pid == pid)
+      {
+        printf("p:%d  id:%d\n", p->staticPriority, p->pid);
+
+        val = p->staticPriority;
+        p->staticPriority = priority;
+
+        release(&p->lock);
+        printf("p:%d  id:%d\n", p->staticPriority, p->pid);
+
+        if (val > priority)
+            yield();
+        break;
+      }
+      release(&p->lock);
+    }
+    return val;
 }
