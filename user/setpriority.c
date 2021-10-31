@@ -7,8 +7,8 @@ int
 main(int argc, char *argv[])
 {
   int priority, pid;
-  if(argc < 3){
-    fprintf(2,"Usage: nice pid priority\n");
+  if(argc != 3) {
+    fprintf(2,"Wrong number of arguments\n");
     exit(1);
   }
 
@@ -16,7 +16,7 @@ main(int argc, char *argv[])
   pid = atoi(argv[2]);
 
   if (priority < 0 || priority > 100){
-    fprintf(2,"Invalid priority (0-100)!\n");
+    fprintf(2,"Invalid: Priority should range from 0 to 100\n");
     exit(1);
   }
   set_priority(priority, pid);

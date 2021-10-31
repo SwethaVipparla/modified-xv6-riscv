@@ -737,15 +737,20 @@ procdump(void)
 {
   static char *states[] = {
   [UNUSED]    "unused",
-  [SLEEPING]  "sleep ",
+  [SLEEPING]  "sleeping",
   [RUNNABLE]  "runble",
-  [RUNNING]   "run   ",
+  [RUNNING]   "running",
   [ZOMBIE]    "zombie"
   };
   struct proc *p;
   char *state;
 
   printf("\n");
+
+  #ifdef PBS
+    printf("PID   Priority\tState\t  rtime\t wtime\tnrun\n");
+  #endif 
+
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -755,10 +760,10 @@ procdump(void)
       state = "???";
     
     #ifdef PBS
-      printf("%d %d %s %d %d %d", p->pid, p->staticPriority, state, p->totalRunTime, ticks - p->timeOfCreation - p->totalRunTime, p->numScheduled);
+      printf("%d\t%d\t%s    %d\t  %d\t%d", p->pid, p->staticPriority, state, p->totalRunTime, ticks - (p->timeOfCreation + p->totalRunTime), p->numScheduled);
+    #else
+      printf("%d %s %s", p->pid, state, p->name);
     #endif
-
-    printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
 }
@@ -785,26 +790,30 @@ updateTime()
   }
 }
 
-int set_priority(int new_priority, int pid)
+int set_priority(int priority, int pid)
 {
-    int tmp = -1;
+    int val = -1;
     struct proc *p;
+
     for(p = proc; p < &proc[NPROC]; p++)
     {
       acquire(&p->lock);
+      
       if(p->pid == pid)
       {
         printf("p:%d  id:%d\n", p->staticPriority, p->pid);
-        tmp = p->staticPriority;
-        p->staticPriority = new_priority;
+
+        val = p->staticPriority;
+        p->staticPriority = priority;
 
         release(&p->lock);
         printf("p:%d  id:%d\n", p->staticPriority, p->pid);
-        if (tmp < new_priority)
+
+        if (val > priority)
             yield();
         break;
       }
       release(&p->lock);
     }
-    return tmp;
+    return val;
 }
