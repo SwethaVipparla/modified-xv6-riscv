@@ -469,6 +469,8 @@ scheduler(void)
           // before jumping back to us.
           p->state = RUNNING;
           c->proc = p;
+
+          p->numScheduled++;
           swtch(&c->context, &p->context);
 
           // Process is done running for now.
@@ -506,6 +508,7 @@ scheduler(void)
         firstProcess->state = RUNNING;
         
         c->proc = firstProcess;
+        p->numScheduled++;
         swtch(&c->context, &firstProcess->context);
 
         c->proc = 0;
@@ -525,7 +528,12 @@ scheduler(void)
         int niceness = 5;
 
         if (p->numScheduled)
-          niceness = (p->sleepTime / (p->sleepTime + p->runTime)) * 10;
+        {
+          if (p->sleepTime + p->runTime != 0)
+            niceness = (p->sleepTime / (p->sleepTime + p->runTime)) * 10;
+          else
+            niceness = 5;
+        }
 
         int val = p->staticPriority - niceness + 5;
         int tmp = val < 100? val : 100;
@@ -750,30 +758,35 @@ procdump(void)
 
   #ifdef PBS
     printf("PID   Priority\tState\t  rtime\t wtime\tnrun\n");
-  #endif 
+  #else
+  #ifdef MLFQ
+    printf("PID   Priority\tState\t  rtime\t wtime\tnrun\n\tq0\tq1\tq2\tq3\tq4");
+  #else
+    printf("PID   State\t  rtime\t wtime\tnrun\n");
+  #endif
+  #endif
 
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
+
     if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
       state = states[p->state];
     else
       state = "???";
-    
+
+    int time;
+
+    if(p->endTime)
+      time = p->endTime - (p->timeOfCreation + p->totalRunTime);
+    else
+      time = ticks - (p->timeOfCreation + p->totalRunTime);
+
     #ifdef PBS
-
-      int time;
-
-      if(p->endTime)
-        time = p->endTime - (p->timeOfCreation + p->totalRunTime);
-      else
-        time = ticks - (p->timeOfCreation + p->totalRunTime);
-
       printf("%d\t%d\t%s    %d\t  %d\t%d", p->pid, p->staticPriority, state, p->totalRunTime, time, p->numScheduled);
    
     #else
-
-      printf("%d %s %s", p->pid, state, p->name);
+      printf("%d\t%s    %d\t  %d\t%d", p->pid, state, p->totalRunTime, time, p->numScheduled);
       
     #endif
     printf("\n");
@@ -804,7 +817,6 @@ updateTime()
 
 int set_priority(int priority, int pid)
 {
-    int val = -1;
     struct proc *p;
 
     for(p = proc; p < &proc[NPROC]; p++)
@@ -813,21 +825,21 @@ int set_priority(int priority, int pid)
       
       if(p->pid == pid)
       {
-        printf("p:%d  id:%d\n", p->staticPriority, p->pid);
-
-        val = p->staticPriority;
+        int val = p->staticPriority;
         p->staticPriority = priority;
 
+        p->runTime = 0;
+        p->sleepTime = 0;
+
         release(&p->lock);
-        printf("p:%d  id:%d\n", p->staticPriority, p->pid);
 
         if (val > priority)
             yield();
-        break;
+        return val;
       }
       release(&p->lock);
     }
-    return val;
+    return -1;
 }
 
 int
