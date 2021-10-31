@@ -118,3 +118,23 @@ sys_set_priority()
 
   return set_priority(priority, pid);
 }
+
+uint64
+sys_waitx(void)
+{
+  uint64 addr, addr1, addr2;
+  uint wtime, rtime;
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  if(argaddr(1, &addr1) < 0) // user virtual memory
+    return -1;
+  if(argaddr(2, &addr2) < 0)
+    return -1;
+  int ret = waitx(addr, &wtime, &rtime);
+  struct proc* p = myproc();
+  if (copyout(p->pagetable, addr1,(char*)&wtime, sizeof(int)) < 0)
+    return -1;
+  if (copyout(p->pagetable, addr2,(char*)&rtime, sizeof(int)) < 0)
+    return -1;
+  return ret;
+}

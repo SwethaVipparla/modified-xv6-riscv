@@ -126,6 +126,7 @@ found:
   p->startTime = 0;
   p->sleepTime = 0;
   p->totalRunTime = 0;
+  p->endTime = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -380,6 +381,7 @@ exit(int status)
 
   p->xstate = status;
   p->state = ZOMBIE;
+  p->endTime = ticks;
 
   release(&wait_lock);
 
@@ -509,30 +511,32 @@ scheduler(void)
         c->proc = 0;
         release(&firstProcess->lock);
       }
+
     #else
     
     #ifdef PBS
+
       struct proc* process = 0;
       int dp = 101;
       for (p = proc; p < &proc[NPROC]; p++)
       {
         acquire(&p->lock);
 
-        int nice = 5;
+        int niceness = 5;
 
         if (p->numScheduled)
-          nice = (p->sleepTime / (p->sleepTime + p->runTime)) * 10;
+          niceness = (p->sleepTime / (p->sleepTime + p->runTime)) * 10;
 
-        int val = p->staticPriority - nice + 5;
-        val = val < 100? val : 100;
-        int processDp = 0 > val? 0 : val;
+        int val = p->staticPriority - niceness + 5;
+        int tmp = val < 100? val : 100;
+        int processDp = 0 > tmp? 0 : tmp;
 
         int flag1 = (dp == processDp && p->numScheduled < process->numScheduled);
         int flag2 = (dp == processDp && p->numScheduled == process->numScheduled && p->timeOfCreation < process->timeOfCreation);
 
         if (p->state == RUNNABLE)
         {
-          if(!process || dp > processDp || flag1 ||flag2)
+          if(!process || dp > processDp || flag1 || flag2)
           {
             if (process)
               release(&process->lock);
@@ -554,19 +558,16 @@ scheduler(void)
         process->sleepTime = 0;
         c->proc = process;
         swtch(&c->context, &process->context);
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
         c->proc = 0;
         release(&process->lock);
       }
-    #else
-    #ifdef MLFC
-    #endif
+
     #endif
     #endif
     #endif
   }
 }
+
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this
@@ -760,9 +761,20 @@ procdump(void)
       state = "???";
     
     #ifdef PBS
-      printf("%d\t%d\t%s    %d\t  %d\t%d", p->pid, p->staticPriority, state, p->totalRunTime, ticks - (p->timeOfCreation + p->totalRunTime), p->numScheduled);
+
+      int time;
+
+      if(p->endTime)
+        time = p->endTime - (p->timeOfCreation + p->totalRunTime);
+      else
+        time = ticks - (p->timeOfCreation + p->totalRunTime);
+
+      printf("%d\t%d\t%s    %d\t  %d\t%d", p->pid, p->staticPriority, state, p->totalRunTime, time, p->numScheduled);
+   
     #else
+
       printf("%d %s %s", p->pid, state, p->name);
+      
     #endif
     printf("\n");
   }
@@ -816,4 +828,53 @@ int set_priority(int priority, int pid)
       release(&p->lock);
     }
     return val;
+}
+
+int
+waitx(uint64 addr, uint* rtime, uint* wtime)
+{
+  struct proc *np;
+  int havekids, pid;
+  struct proc *p = myproc();
+
+  acquire(&wait_lock);
+
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(np = proc; np < &proc[NPROC]; np++){
+      if(np->parent == p){
+        // make sure the child isn't still in exit() or swtch().
+        acquire(&np->lock);
+
+        havekids = 1;
+        if(np->state == ZOMBIE){
+          // Found one.
+          pid = np->pid;
+          *rtime = np->totalRunTime;
+          *wtime = np->endTime - np->timeOfCreation - np->totalRunTime;
+          if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
+                                  sizeof(np->xstate)) < 0) {
+            release(&np->lock);
+            release(&wait_lock);
+            return -1;
+          }
+          freeproc(np);
+          release(&np->lock);
+          release(&wait_lock);
+          return pid;
+        }
+        release(&np->lock);
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || p->killed){
+      release(&wait_lock);
+      return -1;
+    }
+
+    // Wait for a child to exit.
+    sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
 }

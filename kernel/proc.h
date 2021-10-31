@@ -100,6 +100,7 @@ struct proc {
   uint64 numScheduled;
   uint64 sleepTime;
   uint64 totalRunTime;
+  uint64 endTime;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
