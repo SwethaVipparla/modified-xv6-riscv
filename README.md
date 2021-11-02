@@ -125,7 +125,7 @@
 
 The default scheduler of xv6-ricv is Round Robin. I have implemented two other schedulers, which are First Come First Serve and Priority Based.
 
-#### 2.1) FCFS
+#### 2.1) First Come First Serve
 
 FCFS selects the process with the lease creation time, which is the tick number corresponding to the time the process was created. The process is executed until it is terminated.
 
@@ -183,7 +183,7 @@ FCFS selects the process with the lease creation time, which is the tick number 
 
 5. Disables `yield()` in `kernel/trap.c` in order to prevent preemption of the process after the clock interrupts in FCFS.
 
-#### 2.2) PBS
+#### 2.2) Priority Based Scheduling
 
 PBS is a non-preemptive Priority Based scheduler that chooses the process with the highest priority of execution. When two or more processes have the same priority, the number of times the process has been scheduled is used to determine the priority.
 In case the tie still remains, the start-time of the processes are used to break the tie, with the processes having a lower start-time being assigned a higher priority.
@@ -322,7 +322,7 @@ In case the tie still remains, the start-time of the processes are used to break
         exit(1);
     }
 
-6. Added `set_priority()` system call in `kernel/sysproc.c`.
+6. Added `sys_set_priority()` system call in `kernel/sysproc.c`.
 
     ```c
     uint64
@@ -338,13 +338,14 @@ In case the tie still remains, the start-time of the processes are used to break
    }
    ```
 
-#### 2.3) MLFQ
+#### 2.3) Multi Level Feedback Queue
 
 In MLFQ, if a process voluntarily relinquishes CPU control, it is removed from the queue.
 When it is ready to rejoin, it is added to the end of the same queue.
 
-So, if a process, just relinquishes control before its time slice gets over, then it will relinquish control. By this, it will always remain in the top priority and keep getting executed in the main queue.
+If a process uses up a lot of time, it is pushed to a lower queue.
 
+Aging is implemented in order to ensure that such processes are not starved and get executed at some point in time.
 
 ### 3) Procdump
 
